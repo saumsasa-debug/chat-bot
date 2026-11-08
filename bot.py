@@ -1,10 +1,10 @@
-import asyncio, sqlite3, time, re, html, threading
+import asyncio, sqlite3, time, re, os
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ChatType
 import nest_asyncio
-from flask import Flask
 
 BOT_TOKEN = "9014541706:AAHIghnZbsTbmFgXiuGS9Q1Sq9sV6no1s0w"
 
@@ -117,13 +117,18 @@ async def anti_spam(m: Message):
         except: pass
     else: add_balance(user_id, 1)
 
-app = Flask(__name__)
-@app.route('/')
-def index(): return "Bot is running!"
-def run_flask(): app.run(host='0.0.0.0', port=10000)
+async def handle_ping(request):
+    return web.Response(text="Bot is running!")
 
 async def main():
-    threading.Thread(target=run_flask, daemon=True).start()
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 10000)
+    await site.start()
+    print("Web server started on port 10000")
+    
     bot = Bot(token=BOT_TOKEN)
     print("Bot started!")
     await dp.start_polling(bot)
