@@ -1,4 +1,4 @@
-import asyncio, sqlite3, time, re, os, random
+import asyncio, sqlite3, time, re, os, random, string
 from datetime import datetime, timedelta
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
@@ -8,349 +8,212 @@ from aiogram.enums import ChatType
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-BOT_TOKEN = "9014541706:AAHIghnZbsTbmFgXiuGS9Q1Sq9sV6no1s0w"
-CARD = "2202 2092 3280 2644"
-SUPPORT = "@spoff_id"
+BT = "9014541706:AAHIghnZbsTbmFgXiuGS9Q1Sq9sV6no1s0w"
+CD = "2202 2092 3280 2644"
+SP = "@spoff_id"
 
-conn = sqlite3.connect('bot.db', check_same_thread=False)
-c = conn.cursor()
-c.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, balance INTEGER DEFAULT 0, messages INTEGER DEFAULT 0)')
-conn.commit()
+db = sqlite3.connect('bot.db', check_same_thread=False); c = db.cursor()
+c.execute('CREATE TABLE IF NOT EXISTS u (id INTEGER PRIMARY KEY, n TEXT, b INTEGER DEFAULT 0, m INTEGER DEFAULT 0)'); db.commit()
+sd = {}; dp = Dispatcher()
+class S(StatesGroup): w = State()
 
-spam_db = {} 
-dp = Dispatcher()
+def adu(s): return s in ["administrator", "creator"]
+def gu(i, n):
+    c.execute("INSERT OR IGNORE INTO u (id, n) VALUES (?, ?)", (i, n)); db.commit()
+    c.execute("SELECT b, m FROM u WHERE id = ?", (i,)); return c.fetchone()
+def ub(i, a): c.execute("UPDATE u SET b = b + ? WHERE id = ?", (a, i)); db.commit()
+def um(i): c.execute("UPDATE u SET m = m + 1 WHERE id = ?", (i,)); db.commit()
 
-class Buy(StatesGroup):
-    waiting_custom_stars = State()
-
-def is_admin(status): return status in ["administrator", "creator"]
-
-def get_user(user_id, username):
-    c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
-    conn.commit()
-    c.execute("SELECT balance, messages FROM users WHERE user_id = ?", (user_id,))
-    return c.fetchone()
-
-def update_bal(user_id, amount):
-    c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
-    conn.commit()
-
-def update_msg(user_id):
-    c.execute("UPDATE users SET messages = messages + 1 WHERE user_id = ?", (user_id,))
-    conn.commit()
-
-def main_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📜 Правила", callback_data="m_rules"), InlineKeyboardButton(text="🏆 Топ", callback_data="m_top")],
-        [InlineKeyboardButton(text="👤 Профиль", callback_data="m_prof"), InlineKeyboardButton(text="🛒 Магазин", callback_data="m_shop")],
-        [InlineKeyboardButton(text="🆘 Поддержка", url=f"https://t.me/{SUPPORT[1:]}")]
-    ])
-
-def shop_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⭐ Купить звёзды", callback_data="buy_stars"), InlineKeyboardButton(text="💎 Купить Premium", callback_data="buy_prem")],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back_main")]
-    ])
-
-def stars_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="50 звёзд — 89 ₽", callback_data="pay_50")],
-        [InlineKeyboardButton(text="100 звёзд — 165 ₽", callback_data="pay_100")],
-        [InlineKeyboardButton(text="150 звёзд — 245 ₽", callback_data="pay_150")],
-        [InlineKeyboardButton(text="Своё количество", callback_data="custom_stars")],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="m_shop")]
-    ])
-
-def prem_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="3 мес — 1350 ₽", callback_data="prem_3")],
-        [InlineKeyboardButton(text="6 мес — 1900 ₽", callback_data="prem_6")],
-        [InlineKeyboardButton(text="1 год — 3100 ₽", callback_data="prem_12")],
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="m_shop")]
-    ])
+def mk(): return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📜 Правила", callback_data="r"), InlineKeyboardButton(text="🏆 Топ", callback_data="t")],[InlineKeyboardButton(text="👤 Профиль", callback_data="p"), InlineKeyboardButton(text="🛒 Магазин", callback_data="sh")],[InlineKeyboardButton(text="📜 Команды", callback_data="cmd"), InlineKeyboardButton(text="🆘 Поддержка", url=f"https://t.me/{SP[1:]}")]])
+def sk(): return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⭐ Звёзды", callback_data="bs"), InlineKeyboardButton(text="💎 Premium", callback_data="bp")],[InlineKeyboardButton(text="⬅ Назад", callback_data="bk")]])
+def stk(): return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="50 — 89₽", callback_data="pay_50")],[InlineKeyboardButton(text="100 — 165₽", callback_data="pay_100")],[InlineKeyboardButton(text="150 — 245₽", callback_data="pay_150")],[InlineKeyboardButton(text="Своё", callback_data="cs")],[InlineKeyboardButton(text="⬅ Назад", callback_data="sh")]])
+def pk(): return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="3 мес — 1350₽", callback_data="pm_3")],[InlineKeyboardButton(text="6 мес — 1900₽", callback_data="pm_6")],[InlineKeyboardButton(text="1 год — 3100₽", callback_data="pm_12")],[InlineKeyboardButton(text="⬅ Назад", callback_data="sh")]])
 
 @dp.message(Command("start", "help"))
-async def cmd_start(m: Message):
-    get_user(m.from_user.id, m.from_user.username or "")
-    await m.answer("Привет! Я бот для чата. Выбирай:", reply_markup=main_kb())
+async def st(m: Message): gu(m.from_user.id, m.from_user.username or ""); await m.answer("Привет! Выбирай:", reply_markup=mk())
 
-@dp.message(Command("rules"))
-async def cmd_rules(m: Message):
-    await m.answer("📜 <b>Правила чата:</b>\n1. Без спама и флуда.\n2. Без рекламы.\n3. Уважайте друг друга.", parse_mode="HTML")
+@dp.callback_query(F.data == "r")
+async def c_r(c: CallbackQuery): await c.message.answer("📜 <b>Правила:</b>\n1. Без спама.\n2. Без рекламы.\n3. Уважайте друг друга.", parse_mode="HTML"); await c.answer()
 
-@dp.callback_query(F.data == "m_rules")
-async def cb_rules(call: CallbackQuery):
-    await call.message.answer("📜 <b>Правила чата:</b>\n1. Без спама и флуда.\n2. Без рекламы.\n3. Уважайте друг друга.", parse_mode="HTML")
-    await call.answer()
+@dp.callback_query(F.data == "cmd")
+async def c_cmd(c: CallbackQuery): await c.message.answer("📜 <b>Команды:</b>\n/mute /unmute /ban /unban /kick /unkick /tab /wan1 /reward /top /profile /rules /id /ping /coin /dice /ball /roll /fact /joke /love /gay /time /weather /anime /short /calc /password /qr /translate /news /meme /8ball /pick /reverse /clap /vaporwave /spoiler", parse_mode="HTML"); await c.answer()
 
-@dp.callback_query(F.data == "m_shop")
-async def cb_shop(call: CallbackQuery):
-    await call.message.edit_text("Добро пожаловать в магазин! Что тебя интересует?", reply_markup=shop_kb())
-    await call.answer()
+@dp.callback_query(F.data == "sh")
+async def c_sh(c: CallbackQuery): await c.message.edit_text("Магазин:", reply_markup=sk()); await c.answer()
 
-@dp.callback_query(F.data == "back_main")
-async def cb_back(call: CallbackQuery):
-    await call.message.edit_text("Привет! Я бот для чата. Выбирай:", reply_markup=main_kb())
-    await call.answer()
+@dp.callback_query(F.data == "bk")
+async def c_bk(c: CallbackQuery): await c.message.edit_text("Привет! Выбирай:", reply_markup=mk()); await c.answer()
 
-@dp.callback_query(F.data == "buy_stars")
-async def cb_stars(call: CallbackQuery):
-    await call.message.edit_text("Выбери количество звёзд (⚠️ Сначала оплата, потом выдача!):", reply_markup=stars_kb())
-    await call.answer()
+@dp.callback_query(F.data == "bs")
+async def c_bs(c: CallbackQuery): await c.message.edit_text("Выбери звёзды (Сначала оплата!):", reply_markup=stk()); await c.answer()
 
 @dp.callback_query(F.data.startswith("pay_"))
-async def cb_pay_stars(call: CallbackQuery):
-    stars = call.data.split("_")[1]
-    await call.message.edit_text(f"Вы выбрали <b>{stars} звёзд</b>.\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML")
-    await call.answer()
+async def c_py(c: CallbackQuery): await c.message.edit_text(f"Выбрано <b>{c.data.split('_')[1]} звёзд</b>.\nКарта:\n<code>{CD}</code>\n\nЧек {SP}", parse_mode="HTML"); await c.answer()
 
-@dp.callback_query(F.data == "custom_stars")
-async def cb_custom_stars(call: CallbackQuery, state: FSMContext):
-    await state.set_state(Buy.waiting_custom_stars)
-    await call.message.edit_text("Введи количество звёзд (минимум 50, максимум 10000):")
-    await call.answer()
+@dp.callback_query(F.data == "cs")
+async def c_cs(c: CallbackQuery, s: FSMContext): await s.set_state(S.w); await c.message.edit_text("Введи кол-во (50-10000):"); await c.answer()
 
-@dp.message(Buy.waiting_custom_stars)
-async def process_custom_stars(m: Message, state: FSMContext):
+@dp.message(S.w)
+async def p_cs(m: Message, s: FSMContext):
     if not m.text.isdigit(): return await m.answer("Только число:")
-    stars = int(m.text)
-    if stars < 50 or stars > 10000: return await m.answer("От 50 до 10000:")
-    await state.clear()
-    rub = round(stars * 1.65)
-    await m.answer(f"Вы выбрали <b>{stars} звёзд</b>.\nСумма: <b>{rub} ₽</b>\n\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ В меню", callback_data="back_main")]]))
+    st = int(m.text)
+    if st < 50 or st > 10000: return await m.answer("50-10000:")
+    await s.clear(); r = round(st * 1.65)
+    await m.answer(f"<b>{st} звёзд</b> — <b>{r}₽</b>\nКарта:\n<code>{CD}</code>\n\nЧек {SP}", parse_mode="HTML")
 
-@dp.callback_query(F.data == "buy_prem")
-async def cb_prem(call: CallbackQuery):
-    await call.message.edit_text("Выбери срок Premium (⚠️ Сначала оплата, потом выдача!):", reply_markup=prem_kb())
-    await call.answer()
+@dp.callback_query(F.data == "bp")
+async def c_bp(c: CallbackQuery): await c.message.edit_text("Выбери Premium:", reply_markup=pk()); await c.answer()
 
-@dp.callback_query(F.data.startswith("prem_"))
-async def cb_prem_pay(call: CallbackQuery):
-    await call.message.edit_text(f"Вы выбрали Premium.\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML")
-    await call.answer()
+@dp.callback_query(F.data.startswith("pm_"))
+async def c_pm(c: CallbackQuery): await c.message.edit_text(f"Premium.\nКарта:\n<code>{CD}</code>\n\nЧек {SP}", parse_mode="HTML"); await c.answer()
 
 @dp.message(Command("top"))
-async def cmd_top(m: Message):
-    c.execute("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
-    rows = c.fetchall()
-    text = "🏆 <b>Топ по монетам:</b>\n"
-    for i, (u, b) in enumerate(rows, 1): text += f"{i}. @{u} — {b}\n"
-    await m.answer(text, parse_mode="HTML")
+async def c_top(m: Message):
+    c.execute("SELECT n, b FROM u ORDER BY b DESC LIMIT 10"); rows = c.fetchall(); t = "🏆 <b>Топ:</b>\n"
+    for i, (u, b) in enumerate(rows, 1): t += f"{i}. @{u} — {b}\n"
+    await m.answer(t, parse_mode="HTML")
 
-@dp.callback_query(F.data == "m_top")
-async def cb_top(call: CallbackQuery):
-    c.execute("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
-    rows = c.fetchall()
-    text = "🏆 <b>Топ по монетам:</b>\n"
-    for i, (u, b) in enumerate(rows, 1): text += f"{i}. @{u} — {b}\n"
-    await call.message.answer(text, parse_mode="HTML")
-    await call.answer()
+@dp.callback_query(F.data == "t")
+async def c_t(c: CallbackQuery): await c_top(c.message); await c.answer()
 
 @dp.message(Command("profile"))
-async def cmd_profile(m: Message):
-    bal, msg = get_user(m.from_user.id, m.from_user.username or "")
-    await m.answer(f"👤 <b>Профиль:</b>\nID: <code>{m.from_user.id}</code>\nМонеты: {bal}\nСообщений: {msg}", parse_mode="HTML")
+async def c_p(m: Message): b, ms = gu(m.from_user.id, m.from_user.username or ""); await m.answer(f"👤 ID: <code>{m.from_user.id}</code>\nМонеты: {b}\nСообщений: {ms}", parse_mode="HTML")
 
-@dp.callback_query(F.data == "m_prof")
-async def cb_profile(call: CallbackQuery):
-    bal, msg = get_user(call.from_user.id, call.from_user.username or "")
-    await call.message.answer(f"👤 <b>Профиль:</b>\nID: <code>{call.from_user.id}</code>\nМонеты: {bal}\nСообщений: {msg}", parse_mode="HTML")
-    await call.answer()
-
-@dp.message(Command("coin"))
-async def cmd_coin(m: Message):
-    await m.answer(f"Монетка: {random.choice(['Орёл 🦅', 'Решка 🪙'])}")
-
-@dp.message(Command("dice"))
-async def cmd_dice(m: Message):
-    await m.answer_dice(emoji="🎲")
-
-@dp.message(Command("ball"))
-async def cmd_ball(m: Message):
-    answers = ["Да", "Нет", "Возможно", "Спроси позже", "Однозначно да", "Даже не думай"]
-    await m.answer(f"🎱 Шар говорит: {random.choice(answers)}")
-
-@dp.message(Command("roll"))
-async def cmd_roll(m: Message):
-    await m.answer(f"🎲 Выпало: {random.randint(1, 100)}")
-
-@dp.message(Command("fact"))
-async def cmd_fact(m: Message):
-    facts = ["Мед не портится.", "Осьминог имеет три сердца.", "Венера вращается против часовой стрелки."]
-    await m.answer(f"💡 Факт: {random.choice(facts)}")
-
-@dp.message(Command("joke"))
-async def cmd_joke(m: Message):
-    jokes = ["Программист ставит на ночь два стакана: один с водой (если захочет пить), второй пустой (если не захочет).", "Я не ленивый, я в энергосберегающем режиме."]
-    await m.answer(f"😂 {random.choice(jokes)}")
-
-@dp.message(Command("time"))
-async def cmd_time(m: Message):
-    await m.answer(f"⏰ Время: {time.strftime('%H:%M:%S')}")
-
-@dp.message(Command("id"))
-async def cmd_id(m: Message):
-    if m.reply_to_message: await m.reply(f"ID пользователя: <code>{m.reply_to_message.from_user.id}</code>", parse_mode="HTML")
-    else: await m.reply(f"Твой ID: <code>{m.from_user.id}</code>", parse_mode="HTML")
-
-@dp.message(Command("ping"))
-async def cmd_ping(m: Message):
-    await m.answer("🏓 Понг! Я на месте.")
-
-@dp.message(Command("gay"))
-async def cmd_gay(m: Message):
-    if not m.reply_to_message: return await m.answer("Ответь на сообщение!")
-    await m.answer(f"🌈 {m.reply_to_message.from_user.first_name} гей на {random.randint(1, 100)}%")
-
-@dp.message(Command("love"))
-async def cmd_love(m: Message):
-    if not m.reply_to_message: return await m.answer("Ответь на сообщение!")
-    await m.answer(f"❤️ Совместимость: {random.randint(1, 100)}%")
-
-def parse_time(time_str):
-    if time_str.endswith("s"): return timedelta(seconds=int(time_str[:-1]))
-    if time_str.endswith("m"): return timedelta(minutes=int(time_str[:-1]))
-    if time_str.endswith("h"): return timedelta(hours=int(time_str[:-1]))
-    return None
-
-async def get_target(m: Message, args):
-    target_id = None
-    if m.reply_to_message: target_id = m.reply_to_message.from_user.id
-    elif len(args) > 0 and args[0].startswith("@"):
-        c.execute("SELECT user_id FROM users WHERE username = ?", (args[0][1:],))
-        res = c.fetchone()
-        if res: target_id = res[0]
-    return target_id
-
-@dp.message(Command("kick"))
-async def cmd_kick(m: Message):
-    if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if not is_admin(member.status): return
-    args = m.text.split()[1:]
-    target_id = await get_target(m, args)
-    if not target_id: return await m.answer("Ответь на сообщение или укажи @user.")
-    
-    time_str = args[-1] if not args[-1].startswith("@") else "10m"
-    delta = parse_time(time_str) or timedelta(minutes=10)
-    until_date = datetime.now() + delta
-    
-    await m.chat.restrict(target_id, ChatPermissions(can_send_messages=False), until_date=until_date)
-    await m.answer(f"🔇 Пользователь замучен на {time_str}.")
-
-@dp.message(Command("unkick"))
-async def cmd_unkick(m: Message):
-    if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if not is_admin(member.status): return
-    args = m.text.split()[1:]
-    target_id = await get_target(m, args)
-    if not target_id: return await m.answer("Ответь на сообщение или укажи @user.")
-    await m.chat.restrict(target_id, ChatPermissions(can_send_messages=True))
-    await m.answer("🔊 Пользователь размучен.")
-
-@dp.message(Command("ban"))
-async def cmd_ban(m: Message):
-    if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if not is_admin(member.status): return
-    args = m.text.split()[1:]
-    target_id = await get_target(m, args)
-    if not target_id: return await m.answer("Ответь на сообщение или укажи @user.")
-    await m.chat.ban(target_id)
-    await m.answer("⛔ Пользователь забанен.")
-
-@dp.message(Command("unban"))
-async def cmd_unban(m: Message):
-    if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if not is_admin(member.status): return
-    args = m.text.split()[1:]
-    target_id = await get_target(m, args)
-    if not target_id: return await m.answer("Ответь на сообщение или укажи @user.")
-    await m.chat.unban(target_id)
-    await m.answer("✅ Пользователь разбанен.")
+@dp.callback_query(F.data == "p")
+async def c_pp(c: CallbackQuery): b, ms = gu(c.from_user.id, c.from_user.username or ""); await c.message.answer(f"👤 ID: <code>{c.from_user.id}</code>\nМонеты: {b}\nСообщений: {ms}", parse_mode="HTML"); await c.answer()
 
 @dp.message(Command("mute"))
-async def cmd_mute(m: Message):
+async def c_mu(m: Message):
     if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if not is_admin(member.status) or not m.reply_to_message: return
-    await m.chat.restrict(m.reply_to_message.from_user.id, ChatPermissions(can_send_messages=False))
-    await m.reply("🔇 Замучен.")
+    mem = await m.chat.get_member(m.from_user.id)
+    if not adu(mem.status) or not m.reply_to_message: return
+    await m.chat.restrict(m.reply_to_message.from_user.id, ChatPermissions(can_send_messages=False)); await m.reply("🔇 Замучен.")
+
+@dp.message(Command("unmute"))
+async def c_un(m: Message):
+    if m.chat.type == ChatType.PRIVATE: return
+    mem = await m.chat.get_member(m.from_user.id)
+    if not adu(mem.status) or not m.reply_to_message: return
+    await m.chat.restrict(m.reply_to_message.from_user.id, ChatPermissions(can_send_messages=True)); await m.reply("🔊 Размучен.")
+
+@dp.message(Command("ban"))
+async def c_ba(m: Message):
+    if m.chat.type == ChatType.PRIVATE: return
+    mem = await m.chat.get_member(m.from_user.id)
+    if not adu(mem.status) or not m.reply_to_message: return
+    await m.chat.ban(m.reply_to_message.from_user.id); await m.reply("⛔ Забанен.")
+
+@dp.message(Command("unban"))
+async def c_ub(m: Message):
+    if m.chat.type == ChatType.PRIVATE: return
+    mem = await m.chat.get_member(m.from_user.id)
+    if not adu(mem.status) or not m.reply_to_message: return
+    await m.chat.unban(m.reply_to_message.from_user.id); await m.reply("✅ Разбанен.")
 
 @dp.message(Command("tab"))
-async def cmd_tab(m: Message):
+async def c_tb(m: Message):
     if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if not is_admin(member.status): return
+    mem = await m.chat.get_member(m.from_user.id)
+    if not adu(mem.status): return
     await m.delete()
     for i in range(1, 50):
         try: await m.chat.delete_message(m.message_id - i)
         except: pass
 
 @dp.message(Command("wan1"))
-async def cmd_wan1(m: Message):
-    c.execute("SELECT username, messages FROM users ORDER BY messages DESC LIMIT 1")
-    res = c.fetchone()
-    if res: await m.answer(f"🥇 Самый активный в чате: @{res[0]} (сообщений: {res[1]})")
+async def c_w(m: Message):
+    c.execute("SELECT n, m FROM u ORDER BY m DESC LIMIT 1"); r = c.fetchone()
+    if r: await m.answer(f"🥇 @{r[0]} (сообщений: {r[1]})")
 
 @dp.message(Command("reward"))
-async def cmd_reward(m: Message):
-    args = m.text.split()
-    if len(args) < 3 or not args[1].isdigit(): return await m.answer("Формат: /reward 100 @user")
-    amount = int(args[1])
-    if amount < 10 or amount > 1000: return await m.answer("Сумма 10-1000.")
-    bal, _ = get_user(m.from_user.id, m.from_user.username or "")
-    if bal < amount: return await m.answer("Мало монет.")
-    target_id = m.reply_to_message.from_user.id if m.reply_to_message else None
-    if not target_id and args[2].startswith("@"):
-        c.execute("SELECT user_id FROM users WHERE username = ?", (args[2][1:],))
-        res = c.fetchone()
-        if res: target_id = res[0]
-    if not target_id: return await m.answer("Укажи @user или реплай.")
-    update_bal(m.from_user.id, -amount); update_bal(target_id, amount)
-    await m.answer(f"✅ Переведено {amount} монет.")
+async def c_rw(m: Message):
+    a = m.text.split()
+    if len(a) < 3 or not a[1].isdigit(): return await m.answer("Формат: /reward 100 @user")
+    am = int(a[1])
+    if am < 10 or am > 1000: return await m.answer("10-1000.")
+    b, _ = gu(m.from_user.id, m.from_user.username or "")
+    if b < am: return await m.answer("Мало монет.")
+    t = m.reply_to_message.from_user.id if m.reply_to_message else None
+    if not t and a[2].startswith("@"):
+        c.execute("SELECT id FROM u WHERE n = ?", (a[2][1:],)); r = c.fetchone()
+        if r: t = r[0]
+    if not t: return await m.answer("Укажи @user.")
+    ub(m.from_user.id, -am); ub(t, am); await m.answer(f"✅ {am} монет.")
 
 @dp.message(F.text & ~F.text.startswith("/"))
-async def anti_spam(m: Message):
+async def c_as(m: Message):
     if m.chat.type == ChatType.PRIVATE: return
-    member = await m.chat.get_member(m.from_user.id)
-    if is_admin(member.status): return
-    
-    get_user(m.from_user.id, m.from_user.username or "")
-    update_msg(m.from_user.id)
-    
+    mem = await m.chat.get_member(m.from_user.id)
+    if adu(mem.status): return
+    gu(m.from_user.id, m.from_user.username or ""); um(m.from_user.id)
     if re.search(r"(https?://|t\.me/|@[a-zA-Z0-9_]{5,})", m.text):
-        try:
-            await m.delete(); return await m.answer(f"{m.from_user.first_name}, ссылки запрещены!")
+        try: await m.delete(); return await m.answer(f"{m.from_user.first_name}, ссылки запрещены!")
         except: pass
-    user_id = m.from_user.id; now = time.time()
-    if user_id not in spam_db: spam_db[user_id] = []
-    spam_db[user_id] = [t for t in spam_db[user_id] if now - t < 5]; spam_db[user_id].append(now)
-    if len(spam_db[user_id]) > 5:
-        try:
-            await m.chat.restrict(user_id, ChatPermissions(can_send_messages=False), until_date=int(now) + 600)
-            await m.answer(f"🚫 {m.from_user.first_name} замучен за флуд.")
-            spam_db[user_id] = []
+    u = m.from_user.id; n = time.time()
+    if u not in sd: sd[u] = []
+    sd[u] = [x for x in sd[u] if n - x < 5]; sd[u].append(n)
+    if len(sd[u]) > 5:
+        try: await m.chat.restrict(u, ChatPermissions(can_send_messages=False), until_date=int(n) + 600); await m.answer("🚫 Флуд."); sd[u] = []
         except: pass
-    else: update_bal(user_id, 1)
+    else: ub(u, 1)
 
-async def handle_ping(request):
-    return web.Response(text="Bot is running!")
+@dp.message(Command("coin"))
+async def c_co(m: Message): await m.answer(f"Монетка: {random.choice(['Орёл 🦅', 'Решка 🪙'])}")
+@dp.message(Command("dice"))
+async def c_di(m: Message): await m.answer_dice(emoji="🎲")
+@dp.message(Command("ball"))
+async def c_bl(m: Message): await m.answer(f"🎱 {random.choice(['Да', 'Нет', 'Возможно', 'Спроси позже'])}")
+@dp.message(Command("roll"))
+async def c_ro(m: Message): await m.answer(f"🎲 Выпало: {random.randint(1, 100)}")
+@dp.message(Command("fact"))
+async def c_fa(m: Message): await m.answer(f"💡 {random.choice(['Мед не портится.', 'Осьминог имеет три сердца.', 'Венера вращается по часовой.'])}")
+@dp.message(Command("joke"))
+async def c_jo(m: Message): await m.answer(f"😂 {random.choice(['Программист ставит два стакана...', 'Я не ленивый, я в энергосберегающем режиме.'])}")
+@dp.message(Command("time"))
+async def c_ti(m: Message): await m.answer(f"⏰ {time.strftime('%H:%M:%S')}")
+@dp.message(Command("id"))
+async def c_id(m: Message): await m.reply(f"ID: <code>{m.reply_to_message.from_user.id if m.reply_to_message else m.from_user.id}</code>", parse_mode="HTML")
+@dp.message(Command("ping"))
+async def c_pi(m: Message): await m.answer("🏓 Понг!")
+@dp.message(Command("gay"))
+async def c_ga(m: Message): await m.answer(f"🌈 {m.reply_to_message.from_user.first_name} гей на {random.randint(1, 100)}%" if m.reply_to_message else "Ответь!")
+@dp.message(Command("love"))
+async def c_lo(m: Message): await m.answer(f"❤️ Совместимость: {random.randint(1, 100)}%" if m.reply_to_message else "Ответь!")
+@dp.message(Command("weather"))
+async def c_we(m: Message): await m.answer("☀️ Погода: +25°C, солнечно.")
+@dp.message(Command("anime"))
+async def c_an(m: Message): await m.answer("🍥 Аниме: Наруто, Атака Титанов, Ван-Пис.")
+@dp.message(Command("short"))
+async def c_sh(m: Message): await m.answer("✂️ Сокращатель ссылок в разработке.")
+@dp.message(Command("calc"))
+async def c_ca(m: Message): await m.answer("🧮 Калькулятор в разработке.")
+@dp.message(Command("password"))
+async def c_pa(m: Message): await m.answer(f"🔑 Пароль: {''.join(random.choices(string.ascii_letters + string.digits, k=12))}")
+@dp.message(Command("qr"))
+async def c_qr(m: Message): await m.answer("🔳 QR-код в разработке.")
+@dp.message(Command("translate"))
+async def c_tr(m: Message): await m.answer("🌐 Переводчик в разработке.")
+@dp.message(Command("news"))
+async def c_ne(m: Message): await m.answer("📰 Новости: Всё хорошо!")
+@dp.message(Command("meme"))
+async def c_me(m: Message): await m.answer("🖼 Мем: [Картинка]")
+@dp.message(Command("8ball"))
+async def c_8b(m: Message): await m.answer(f"🎱 {random.choice(['Да', 'Нет', 'Возможно', 'Точно да', 'Точно нет'])}")
+@dp.message(Command("pick"))
+async def c_pk(m: Message): await m.answer(f"🎲 Выбор: {random.choice(['Вариант 1', 'Вариант 2', 'Вариант 3'])}")
+@dp.message(Command("reverse"))
+async def c_re(m: Message): await m.answer(f"🔄 {m.text[9:][::-1] if len(m.text) > 9 else 'Напиши текст'}")
+@dp.message(Command("clap"))
+async def c_cl(m: Message): await m.answer("👏👏👏")
+@dp.message(Command("vaporwave"))
+async def c_va(m: Message): await m.answer("Ｖ Ａ Ｐ Ｏ Ｒ Ｗ Ａ Ｖ Ｅ")
+@dp.message(Command("spoiler"))
+async def c_sp(m: Message): await m.answer("||Скрытый текст||", parse_mode="MarkdownV2")
 
-async def main():
-    app = web.Application()
-    app.router.add_get('/', handle_ping)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 10000)
-    await site.start()
-    print("Web server started on port 10000")
-    
-    bot = Bot(token=BOT_TOKEN)
-    print("Bot started!")
-    await dp.start_polling(bot)
+async def hp(r): return web.Response(text="OK")
+async def mn():
+    app = web.Application(); app.router.add_get('/', hp); rn = web.AppRunner(app); await rn.setup()
+    st = web.TCPSite(rn, '0.0.0.0', 10000); await st.start(); print("Web Started")
+    b = Bot(token=BT); print("Bot Started!"); await dp.start_polling(b)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == "__main__": asyncio.run(mn())
