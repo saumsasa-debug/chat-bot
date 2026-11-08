@@ -4,7 +4,6 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ChatType
-import nest_asyncio
 
 BOT_TOKEN = "9014541706:AAHIghnZbsTbmFgXiuGS9Q1Sq9sV6no1s0w"
 
@@ -14,7 +13,6 @@ c.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, userna
 conn.commit()
 
 spam_db = {} 
-nest_asyncio.apply()
 dp = Dispatcher()
 
 def is_admin(status): return status in ["administrator", "creator"]
