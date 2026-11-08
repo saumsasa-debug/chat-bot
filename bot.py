@@ -120,7 +120,7 @@ async def anti_spam(m: Message):
 app = Flask(__name__)
 @app.route('/')
 def index(): return "Bot is running!"
-def run_flask(): app.run(host='0.0.0.0', port=8080)
+def run_flask(): app.run(host='0.0.0.0', port=10000)
 
 async def main():
     threading.Thread(target=run_flask, daemon=True).start()
