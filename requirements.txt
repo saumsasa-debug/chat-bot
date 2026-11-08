@@ -1,0 +1,2 @@
+aiogram
+nest_asyncio
