@@ -5,10 +5,12 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
 from aiogram.enums import ChatType
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 BOT_TOKEN = "9014541706:AAHIghnZbsTbmFgXiuGS9Q1Sq9sV6no1s0w"
 CARD = "2202 2092 3280 2644"
-SUPPORT = "@Amoert822"
+SUPPORT = "@spoff_id"
 
 conn = sqlite3.connect('bot.db', check_same_thread=False)
 c = conn.cursor()
@@ -17,6 +19,9 @@ conn.commit()
 
 spam_db = {} 
 dp = Dispatcher()
+
+class Buy(StatesGroup):
+    waiting_custom_stars = State()
 
 def is_admin(status): return status in ["administrator", "creator"]
 
@@ -52,6 +57,7 @@ def stars_kb():
         [InlineKeyboardButton(text="50 звёзд — 89 ₽", callback_data="pay_50")],
         [InlineKeyboardButton(text="100 звёзд — 165 ₽", callback_data="pay_100")],
         [InlineKeyboardButton(text="150 звёзд — 245 ₽", callback_data="pay_150")],
+        [InlineKeyboardButton(text="Своё количество", callback_data="custom_stars")],
         [InlineKeyboardButton(text="⬅ Назад", callback_data="m_shop")]
     ])
 
@@ -73,40 +79,55 @@ async def cmd_rules(m: Message):
     await m.answer("📜 <b>Правила чата:</b>\n1. Без спама и флуда.\n2. Без рекламы.\n3. Уважайте друг друга.", parse_mode="HTML")
 
 @dp.callback_query(F.data == "m_rules")
-async def cb_rules(c: CallbackQuery):
-    await c.message.answer("📜 <b>Правила чата:</b>\n1. Без спама и флуда.\n2. Без рекламы.\n3. Уважайте друг друга.", parse_mode="HTML")
-    await c.answer()
+async def cb_rules(call: CallbackQuery):
+    await call.message.answer("📜 <b>Правила чата:</b>\n1. Без спама и флуда.\n2. Без рекламы.\n3. Уважайте друг друга.", parse_mode="HTML")
+    await call.answer()
 
 @dp.callback_query(F.data == "m_shop")
-async def cb_shop(c: CallbackQuery):
-    await c.message.edit_text("Добро пожаловать в магазин! Что тебя интересует?", reply_markup=shop_kb())
-    await c.answer()
+async def cb_shop(call: CallbackQuery):
+    await call.message.edit_text("Добро пожаловать в магазин! Что тебя интересует?", reply_markup=shop_kb())
+    await call.answer()
 
 @dp.callback_query(F.data == "back_main")
-async def cb_back(c: CallbackQuery):
-    await c.message.edit_text("Привет! Я бот для чата. Выбирай:", reply_markup=main_kb())
-    await c.answer()
+async def cb_back(call: CallbackQuery):
+    await call.message.edit_text("Привет! Я бот для чата. Выбирай:", reply_markup=main_kb())
+    await call.answer()
 
 @dp.callback_query(F.data == "buy_stars")
-async def cb_stars(c: CallbackQuery):
-    await c.message.edit_text("Выбери количество звёзд (⚠️ Сначала оплата, потом выдача!):", reply_markup=stars_kb())
-    await c.answer()
+async def cb_stars(call: CallbackQuery):
+    await call.message.edit_text("Выбери количество звёзд (⚠️ Сначала оплата, потом выдача!):", reply_markup=stars_kb())
+    await call.answer()
 
 @dp.callback_query(F.data.startswith("pay_"))
-async def cb_pay_stars(c: CallbackQuery):
-    stars = c.data.split("_")[1]
-    await c.message.edit_text(f"Вы выбрали <b>{stars} звёзд</b>.\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML")
-    await c.answer()
+async def cb_pay_stars(call: CallbackQuery):
+    stars = call.data.split("_")[1]
+    await call.message.edit_text(f"Вы выбрали <b>{stars} звёзд</b>.\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML")
+    await call.answer()
+
+@dp.callback_query(F.data == "custom_stars")
+async def cb_custom_stars(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Buy.waiting_custom_stars)
+    await call.message.edit_text("Введи количество звёзд (минимум 50, максимум 10000):")
+    await call.answer()
+
+@dp.message(Buy.waiting_custom_stars)
+async def process_custom_stars(m: Message, state: FSMContext):
+    if not m.text.isdigit(): return await m.answer("Только число:")
+    stars = int(m.text)
+    if stars < 50 or stars > 10000: return await m.answer("От 50 до 10000:")
+    await state.clear()
+    rub = round(stars * 1.65)
+    await m.answer(f"Вы выбрали <b>{stars} звёзд</b>.\nСумма: <b>{rub} ₽</b>\n\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅ В меню", callback_data="back_main")]]))
 
 @dp.callback_query(F.data == "buy_prem")
-async def cb_prem(c: CallbackQuery):
-    await c.message.edit_text("Выбери срок Premium (⚠️ Сначала оплата, потом выдача!):", reply_markup=prem_kb())
-    await c.answer()
+async def cb_prem(call: CallbackQuery):
+    await call.message.edit_text("Выбери срок Premium (⚠️ Сначала оплата, потом выдача!):", reply_markup=prem_kb())
+    await call.answer()
 
 @dp.callback_query(F.data.startswith("prem_"))
-async def cb_prem_pay(c: CallbackQuery):
-    await c.message.edit_text(f"Вы выбрали Premium.\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML")
-    await c.answer()
+async def cb_prem_pay(call: CallbackQuery):
+    await call.message.edit_text(f"Вы выбрали Premium.\nПереведите сумму на карту:\n<code>{CARD}</code>\n\nПосле перевода напишите {SUPPORT} — пришлите чек.", parse_mode="HTML")
+    await call.answer()
 
 @dp.message(Command("top"))
 async def cmd_top(m: Message):
@@ -117,13 +138,13 @@ async def cmd_top(m: Message):
     await m.answer(text, parse_mode="HTML")
 
 @dp.callback_query(F.data == "m_top")
-async def cb_top(c: CallbackQuery):
+async def cb_top(call: CallbackQuery):
     c.execute("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
     rows = c.fetchall()
     text = "🏆 <b>Топ по монетам:</b>\n"
     for i, (u, b) in enumerate(rows, 1): text += f"{i}. @{u} — {b}\n"
-    await c.message.answer(text, parse_mode="HTML")
-    await c.answer()
+    await call.message.answer(text, parse_mode="HTML")
+    await call.answer()
 
 @dp.message(Command("profile"))
 async def cmd_profile(m: Message):
@@ -131,10 +152,10 @@ async def cmd_profile(m: Message):
     await m.answer(f"👤 <b>Профиль:</b>\nID: <code>{m.from_user.id}</code>\nМонеты: {bal}\nСообщений: {msg}", parse_mode="HTML")
 
 @dp.callback_query(F.data == "m_prof")
-async def cb_profile(c: CallbackQuery):
-    bal, msg = get_user(c.from_user.id, c.from_user.username or "")
-    await c.message.answer(f"👤 <b>Профиль:</b>\nID: <code>{c.from_user.id}</code>\nМонеты: {bal}\nСообщений: {msg}", parse_mode="HTML")
-    await c.answer()
+async def cb_profile(call: CallbackQuery):
+    bal, msg = get_user(call.from_user.id, call.from_user.username or "")
+    await call.message.answer(f"👤 <b>Профиль:</b>\nID: <code>{call.from_user.id}</code>\nМонеты: {bal}\nСообщений: {msg}", parse_mode="HTML")
+    await call.answer()
 
 @dp.message(Command("coin"))
 async def cmd_coin(m: Message):
@@ -186,7 +207,6 @@ async def cmd_love(m: Message):
     if not m.reply_to_message: return await m.answer("Ответь на сообщение!")
     await m.answer(f"❤️ Совместимость: {random.randint(1, 100)}%")
 
-# --- КИК, БАН, МУТ ---
 def parse_time(time_str):
     if time_str.endswith("s"): return timedelta(seconds=int(time_str[:-1]))
     if time_str.endswith("m"): return timedelta(minutes=int(time_str[:-1]))
