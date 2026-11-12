@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 BOT_TOKEN = "9092732678:AAF3pd_k9ANlSnCB-T2kJ0Oc_YJNlVXDxYw"
-WEB_APP_URL = "https://chat-bot-iszv.onrender.com/v5"
+WEB_APP_URL = "https://chat-bot-iszv.onrender.com/v6"
 ADMIN_ID = 123456789 
 
 dp = Dispatcher()
@@ -67,12 +67,25 @@ body{background:#121212;color:#fff;font-family:sans-serif;margin:0;padding:15px;
 <button class="btn" id="bj-stand" onclick="standBJ()" disabled>Стоп</button>
 <button class="btn" style="background:#555" onclick="nav('main')">⬅ Назад</button></div></div>
 
-<div id="view-set" class="hidden"><div class="card"><h2>Настройки</h2>
+<div id="view-prof" class="hidden"><div class="card"><h2>👤 Профиль</h2>
+<p>ID: <span id="p-id">0</span></p>
+<p>Баланс: <span id="p-bal">0</span></p>
+<p>Приглашено: 0</p>
+<button class="btn" style="background:#555" onclick="nav('main')">⬅ Назад</button></div></div>
+
+<div id="view-earn" class="hidden"><div class="card"><h2>💸 Заработок</h2>
+<p>Пригласи друга и получи 5000 монет!</p>
+<button class="btn" onclick="share()">Отправить ссылку</button>
+<button class="btn" style="background:#555" onclick="nav('main')">⬅ Назад</button></div></div>
+
+<div id="view-set" class="hidden"><div class="card"><h2>⚙️ Настройки</h2>
 <button class="btn" onclick="admin()">Админ-панель</button>
 <button class="btn" style="background:#555" onclick="nav('main')">⬅ Назад</button></div></div>
 
 <div class="menu">
 <button class="menu-btn" onclick="nav('main')">🏠 Меню</button>
+<button class="menu-btn" onclick="nav('prof')">👤 Профиль</button>
+<button class="menu-btn" onclick="nav('earn')">💸 Заработок</button>
 <button class="menu-btn" onclick="nav('set')">⚙️ Настройки</button>
 </div>
 
@@ -84,9 +97,16 @@ let balance = 15000;
 let minesActive = false, minesBet = 0, minesMult = 0, minesOpened = 0;
 
 document.getElementById('username').innerText = tg.initDataUnsafe?.user?.first_name || "Игрок";
+document.getElementById('p-id').innerText = uid;
 
-function updateUI() { document.getElementById('bal').innerText = Math.floor(balance); }
-function nav(id) { document.querySelectorAll('div[id^="view-"]').forEach(el => el.classList.add('hidden')); document.getElementById('view-' + id).classList.remove('hidden'); }
+function updateUI() { 
+    document.getElementById('bal').innerText = Math.floor(balance); 
+    document.getElementById('p-bal').innerText = Math.floor(balance);
+}
+function nav(id) { 
+    document.querySelectorAll('div[id^="view-"]').forEach(el => el.classList.add('hidden')); 
+    document.getElementById('view-' + id).classList.remove('hidden'); 
+}
 
 function spin() {
     let bet = parseInt(document.getElementById('slot-bet').value) || 100;
@@ -188,6 +208,10 @@ function standBJ() {
     document.getElementById('bj-stand').disabled = true;
 }
 
+function share() {
+    alert('Ссылка: https://t.me/kazino_mine_bot?start=' + uid);
+}
+
 function admin() {
     let p = prompt('Пароль:');
     if(p === '3421') {
@@ -205,7 +229,7 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     app = web.Application()
     app.router.add_get('/', handle_ping)
-    app.router.add_get('/v5', app_page)
+    app.router.add_get('/v6', app_page)
     runner = web.AppRunner(app); await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 10000); await site.start()
     print("Bot Started!"); await dp.start_polling(bot)
