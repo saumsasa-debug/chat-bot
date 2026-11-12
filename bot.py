@@ -50,26 +50,22 @@ async def cmd_start(m: Message):
 @dp.callback_query(F.data == "open_menu")
 async def cb_open_menu(c: CallbackQuery):
     bal, _, _ = get_bal(c.from_user.id)
-    text = f"🎰 <b>Главное меню</b>\n\nТвой баланс: <b>{bal} монет</b>\n\nВыбирай игру!"
+    # Вот то самое меню-витрина, которое ты просил
+    text = (
+        f"<b>🎰 Добро пожаловать в KAZINO MINE</b>\n\n"
+        f"💰 <b>Твой баланс:</b> {bal} монет\n"
+        f"🏆 <b>Статус:</b> Новичок (уровень 1)\n\n"
+        f"<b>📈 Твоя статистика:</b>\n"
+        f"├ Игр сыграно: 0\n"
+        f"├ Выиграно: 0 монет\n"
+        f"└ Проиграно: 0 монет\n\n"
+        f"<b>⚡️ Доступные действия:</b>\n"
+        f"Выбирай игру ниже и испытай удачу! Не забудь забрать бонус."
+    )
     await c.message.edit_text(text, reply_markup=main_kb(), parse_mode="HTML")
     await c.answer()
 
-@dp.callback_query(F.data == "promo")
-async def cb_promo(c: CallbackQuery, state: FSMContext):
-    await state.set_state(Promo.wait_code)
-    await c.message.edit_text("Введи промокод в чат (например: CASINO2026):")
-    await c.answer()
-
-@dp.message(Promo.wait_code)
-async def process_promo(m: Message, state: FSMContext):
-    code = m.text.strip().upper()
-    if code == "CASINO2026":
-        add_bal(m.from_user.id, 500)
-        await m.answer("✅ Промокод активирован! Ты получил 500 монет.")
-    else:
-        await m.answer("❌ Неверный промокод.")
-    await state.clear()
-
+# --- ИГРЫ ---
 @dp.callback_query(F.data == "slots")
 async def cb_slots(c: CallbackQuery): await c.message.answer("Напиши /slots [ставка] в чат, чтобы играть."); await c.answer()
 
