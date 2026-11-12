@@ -7,11 +7,12 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, W
 BOT_TOKEN = "9092732678:AAF3pd_k9ANlSnCB-T2kJ0Oc_YJNlVXDxYw"
 CARD = "2202 2092 3280 2644"
 ADMIN_PASS = "3421"
-WEB_APP_URL = "https://chat-bot-iszv.onrender.com"
+# Обновили ссылку на /v2, чтобы Telegram сбросил кэш
+WEB_APP_URL = "https://chat-bot-iszv.onrender.com/v2"
 
 db = sqlite3.connect('casino.db', check_same_thread=False)
 c = db.cursor()
-# Изменили DEFAULT 1000 на 15000
+# Стартовый баланс 15000
 c.execute('CREATE TABLE IF NOT EXISTS u (id INTEGER PRIMARY KEY, bal INTEGER DEFAULT 15000, refs INTEGER DEFAULT 0, time INTEGER DEFAULT 0)')
 c.execute('CREATE TABLE IF NOT EXISTS promo (code TEXT PRIMARY KEY, reward INTEGER)')
 db.commit()
@@ -31,7 +32,7 @@ body{background:#121212;color:#fff;font-family:sans-serif;margin:0;padding:15px;
 .card{background:#1e1e1e;border-radius:10px;padding:15px;margin-bottom:15px}
 .btn{background:#4CAF50;color:#fff;border:none;padding:10px;border-radius:5px;width:100%;margin:5px 0;font-size:16px}
 .inp{background:#333;color:#fff;border:none;padding:10px;width:80%;border-radius:5px;text-align:center;font-size:16px}
-.menu{position:fixed;bottom:0;left:0;width:100%;background:#1e1e1e;display:flex;justify-content:space-around;padding:10px 0}
+.menu{position:fixed;bottom:0;left:0;width:100%;background:#1e1e1e;display:flex;justify-content:space-around;padding:10px 0;border-top:1px solid #333}
 .menu-btn{background:none;border:none;color:#aaa;font-size:12px;cursor:pointer}
 .menu-btn.active{color:#4CAF50}
 .hidden{display:none}
@@ -40,37 +41,47 @@ body{background:#121212;color:#fff;font-family:sans-serif;margin:0;padding:15px;
 <div id="view-main">
 <div class="card"><h2>🎰 KAZINO MINE</h2><h3>Баланс: <span id="bal">0</span></h3></div>
 <div class="card"><h2>Слоты</h2><div class="slots" id="slot">🍒|🍋|🍊</div>
-<input class="inp" id="bet" type="number" value="100"><br>
-<label><input type="checkbox" id="fast"> Быстро (2 сек)</label><br>
+<input class="inp" id="bet" type="number" value="100" placeholder="Ставка 100-1000"><br>
+<label style="display:block;margin:10px 0;"><input type="checkbox" id="fast"> Быстро (2 сек)</label>
 <button class="btn" onclick="spin()">СТАРТ</button></div>
 </div>
+
 <div id="view-prof" class="hidden"><div class="card"><h2>Профиль</h2><p>Баланс: <span id="p-bal">0</span></p><p>В игре: <span id="p-time">0</span> мин.</p><p>Друзей: <span id="p-ref">0</span></p></div></div>
+
 <div id="view-earn" class="hidden"><div class="card"><h2>Заработок</h2><p>Пригласи друга и получи 5000 монет!</p><button class="btn" onclick="share()">Отправить ссылку</button></div></div>
-<div id="view-sell" class="hidden"><div class="card"><h2>Продажа</h2><p>Купить монеты:</p>
+
+<div id="view-sell" class="hidden"><div class="card"><h2>Покупка монет</h2>
 <button class="btn" onclick="buy(1000,10)">1000 монет - 10₽</button>
 <button class="btn" onclick="buy(5000,50)">5000 монет - 50₽</button>
 <input class="inp" id="c-buy" type="number" placeholder="Свое кол-во"><button class="btn" onclick="buyCustom()">Купить</button>
-<p id="pay-info" class="hidden">Перевод на карту: 2202 2092 3280 2644</p></div></div>
-<div id="view-set" class="hidden"><div class="card"><h2>Настройки</h2><p>Тема:</p>
-<button class="btn" style="background:#000" onclick="theme('black')">Черный</button><button class="btn" style="background:#ff69b4" onclick="theme('pink')">Розовый</button>
+<p id="pay-info" class="hidden" style="color:#ffd700;margin-top:10px;">Карта: 2202 2092 3280 2644<br>После оплаты жди зачисления!</p></div></div>
+
+<div id="view-set" class="hidden"><div class="card"><h2>Настройки</h2>
+<p>Цвет темы:</p>
+<button class="btn" style="background:#000" onclick="theme('black')">Черный</button>
+<button class="btn" style="background:#ff69b4" onclick="theme('pink')">Розовый</button>
+<button class="btn" style="background:#e91e63" onclick="theme('red')">Красный</button>
 <p>Промокод:</p><input class="inp" id="promo"><button class="btn" onclick="actPromo()">Активировать</button>
-<p>Канал: <a href="https://t.me/kazino_mine" style="color:#4CAF50">@kazino_mine</a></p>
-<button class="btn" style="background:#e91e63" onclick="admin()">Админ-панель</button></div></div>
+<p>Наш канал: <a href="https://t.me/kazino_mine" style="color:#4CAF50">@kazino_mine</a></p>
+<button class="btn" style="background:#555;margin-top:20px;" onclick="admin()">Админ-панель</button></div></div>
+
 <div class="menu">
 <button class="menu-btn" onclick="nav('main')">🎰 Играть</button>
 <button class="menu-btn" onclick="nav('prof')">👤 Профиль</button>
 <button class="menu-btn" onclick="nav('earn')">💸 Заработок</button>
-<button class="menu-btn" onclick="nav('sell')">🛒 Продажа</button>
+<button class="menu-btn" onclick="nav('sell')">🛒 Покупка</button>
 <button class="menu-btn" onclick="nav('set')">⚙️ Настройки</button>
 </div>
 <script>
 let tg=window.Telegram.WebApp; tg.expand();
 let uid = tg.initDataUnsafe?.user?.id || 12345;
-let balance = 15000; // Изменили стартовый баланс на 15000
+// Баланс для визуала (в реале нужно тянуть с сервера)
+let balance = 15000; 
 function updateUI(){ document.getElementById('bal').innerText=balance; document.getElementById('p-bal').innerText=balance; }
 function nav(id){ document.querySelectorAll('div[id^="view-"]').forEach(el=>el.classList.add('hidden')); document.getElementById('view-'+id).classList.remove('hidden'); }
 function spin(){
     let bet = parseInt(document.getElementById('bet').value) || 100;
+    if(bet < 100 || bet > 1000) return alert('Ставка от 100 до 1000!');
     if(bet>balance) return alert('Недостаточно монет!');
     let time = document.getElementById('fast').checked ? 2000 : 6000;
     let icons = ['🍒','🍋','🍊','7️⃣','💎'];
@@ -83,23 +94,19 @@ function spin(){
         else if(r1===r2||r2===r3||r1===r3){ balance += bet*2; alert('Пара! +'+bet*2); }
         else { balance -= bet; alert('Мимо! -'+bet); }
         updateUI();
-        fetch('/api/spin', {method:'POST', body:JSON.stringify({uid, bet, win:(r1===r2&&r2===r3)||(r1===r2||r2===r3||r1===r3)})});
     }, time);
 }
 function share(){ alert('Ссылка: https://t.me/kazino_mine_bot?start='+uid); }
 function buy(c, p){ document.getElementById('pay-info').classList.remove('hidden'); alert('Переведите '+p+'₽ на карту и нажмите "Оплатил"'); fetch('/api/pay', {method:'POST', body:JSON.stringify({uid, coins:c, rub:p})}); }
 function buyCustom(){ let c=parseInt(document.getElementById('c-buy').value); if(c) buy(c, c*0.01); }
 function theme(color){ document.body.style.background = color; }
-function actPromo(){ let p = document.getElementById('promo').value; fetch('/api/promo', {method:'POST', body:JSON.stringify({uid, code:p})}).then(r=>r.json()).then(d=>{alert(d.msg); balance+=d.reward; updateUI();}); }
+function actPromo(){ let p = document.getElementById('promo').value; fetch('/api/promo', {method:'POST', body:JSON.stringify({uid, code:p})}).then(r=>r.json()).then(d=>{alert(d.msg); if(d.reward) { balance+=d.reward; updateUI(); } }); }
 function admin(){ let p = prompt('Введите пароль:'); if(p === '3421'){ alert('Админка (в разработке)'); } else { alert('Неверный пароль'); } }
 updateUI();
 </script></body></html>
 """
 
 async def app_page(request): return web.Response(text=HTML, content_type='text/html')
-async def api_spin(request):
-    data = await request.json()
-    return web.json_response({"status":"ok"})
 async def api_promo(request):
     data = await request.json()
     c.execute("SELECT reward FROM promo WHERE code=?", (data['code'].upper(),))
@@ -110,7 +117,8 @@ async def api_promo(request):
     return web.json_response({"msg":"Неверный промокод", "reward":0})
 async def api_pay(request):
     data = await request.json()
-    await bot.send_message(ADMIN_ID, f"💰 Оплата: {data['coins']} монет за {data['rub']}₽ от ID {data['uid']}")
+    try: await bot.send_message(ADMIN_ID, f"💰 Оплата: {data['coins']} монет за {data['rub']}₽ от ID {data['uid']}")
+    except: pass
     return web.json_response({"status":"ok"})
 
 async def handle_ping(request): return web.Response(text="OK")
@@ -118,12 +126,11 @@ async def handle_ping(request): return web.Response(text="OK")
 async def main():
     global bot, ADMIN_ID
     bot = Bot(token=BOT_TOKEN)
-    ADMIN_ID = 123456789 
+    ADMIN_ID = 123456789 # Замени на свой ID, если хочешь получать уведомления
     
     app = web.Application()
     app.router.add_get('/', handle_ping)
-    app.router.add_get('/app', app_page)
-    app.router.add_post('/api/spin', api_spin)
+    app.router.add_get('/v2', app_page) # Изменили путь
     app.router.add_post('/api/promo', api_promo)
     app.router.add_post('/api/pay', api_pay)
     
@@ -145,7 +152,7 @@ async def cmd_start(m: Message):
             except: pass
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Заходи и выигрывай", web_app=WebAppInfo(url=f"{WEB_APP_URL}/app"))]
+        [InlineKeyboardButton(text="🚀 Заходи и выигрывай", web_app=WebAppInfo(url=f"{WEB_APP_URL}"))]
     ])
     await m.answer("Добро пожаловать в KAZINO MINE! Нажми кнопку ниже, чтобы играть:", reply_markup=kb)
 
