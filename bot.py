@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
-BOT_TOKEN = "9092732678:AAF3pd_k9ANlSnCB-T2kJ0Oc_YJNlVXDxYw"
+BOT_TOKEN = "9092732678:AAHcIfLhdKWJdqNelGJr2lkEdoGOrg3iHGg"
 WEB_APP_URL = "https://chat-bot-iszv.onrender.com/v8"
 
 dp = Dispatcher()
