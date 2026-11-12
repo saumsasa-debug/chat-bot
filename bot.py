@@ -27,18 +27,27 @@ def get_bal(uid):
 def add_bal(uid, amt):
     c.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amt, uid)); db.commit()
 
+# --- КЛАВИАТУРЫ ---
 def start_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Заходи и выигрывай", callback_data="open_menu")]
+        [InlineKeyboardButton(text="🚀 Заходи и выигрывай", callback_data="main_menu")]
     ])
 
-def main_kb():
+# Главное меню (как в XNet App)
+def main_menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎰 Играть", callback_data="play_menu")],
+        [InlineKeyboardButton(text="👤 Профиль", callback_data="profile"), InlineKeyboardButton(text="ℹ️ О проекте", callback_data="about")],
+        [InlineKeyboardButton(text="🎟 Промо", callback_data="promo"), InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")],
+        [InlineKeyboardButton(text="🔗 Наш канал", url=CHANNEL_URL)]
+    ])
+
+# Меню игр (вылезает после кнопки "Играть")
+def play_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎰 Слоты", callback_data="slots"), InlineKeyboardButton(text="🎲 Рулетка", callback_data="roulette")],
         [InlineKeyboardButton(text="🪙 Монетка", callback_data="coin"), InlineKeyboardButton(text="🎁 Бонус", callback_data="bonus")],
-        [InlineKeyboardButton(text="🔥 +1000 за подписку", callback_data="sub_bonus")],
-        [InlineKeyboardButton(text="🎟 Промокод", callback_data="promo"), InlineKeyboardButton(text="🔗 Наш канал", url=CHANNEL_URL)],
-        [InlineKeyboardButton(text="🆘 Поддержка", url=f"https://t.me/{SUPPORT[1:]}")]
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")]
     ])
 
 @dp.message(Command("start"))
@@ -47,27 +56,52 @@ async def cmd_start(m: Message):
     text = "👋 <b>Привет! Это казино, где можно играть без денег!</b> 🤤\n\nНа старте мы даем тебе <b>1000 монет</b>. Жми кнопку ниже, чтобы начать!"
     await m.answer(text, reply_markup=start_kb(), parse_mode="HTML")
 
-@dp.callback_query(F.data == "open_menu")
-async def cb_open_menu(c: CallbackQuery):
+@dp.callback_query(F.data == "main_menu")
+async def cb_main_menu(c: CallbackQuery):
     bal, _, _ = get_bal(c.from_user.id)
-    # Вот то самое меню-витрина, которое ты просил
-    text = (
-        f"<b>🎰 Добро пожаловать в KAZINO MINE</b>\n\n"
-        f"💰 <b>Твой баланс:</b> {bal} монет\n"
-        f"🏆 <b>Статус:</b> Новичок (уровень 1)\n\n"
-        f"<b>📈 Твоя статистика:</b>\n"
-        f"├ Игр сыграно: 0\n"
-        f"├ Выиграно: 0 монет\n"
-        f"└ Проиграно: 0 монет\n\n"
-        f"<b>⚡️ Доступные действия:</b>\n"
-        f"Выбирай игру ниже и испытай удачу! Не забудь забрать бонус."
-    )
-    await c.message.edit_text(text, reply_markup=main_kb(), parse_mode="HTML")
+    text = f"<b>🎰 KAZINO MINE</b>\n\n💰 <b>Баланс:</b> {bal} монет\n🏆 <b>Статус:</b> Новичок\n\nВыбирай раздел:"
+    await c.message.edit_text(text, reply_markup=main_menu_kb(), parse_mode="HTML")
     await c.answer()
 
-# --- ИГРЫ ---
+@dp.callback_query(F.data == "play_menu")
+async def cb_play_menu(c: CallbackQuery):
+    await c.message.edit_text("🎮 <b>Выбери игру:</b>", reply_markup=play_menu_kb(), parse_mode="HTML")
+    await c.answer()
+
+@dp.callback_query(F.data == "profile")
+async def cb_profile(c: CallbackQuery):
+    bal, _, _ = get_bal(c.from_user.id)
+    text = f"👤 <b>Твой профиль</b>\n\n🆔 ID: <code>{c.from_user.id}</code>\n💰 Баланс: <b>{bal} монет</b>"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")]])
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await c.answer()
+
+@dp.callback_query(F.data == "about")
+async def cb_about(c: CallbackQuery):
+    text = "ℹ️ <b>О проекте</b>\n\nНаше казино создано для развлечения. Здесь нет реальных денег, только игровые монеты. Играй на здоровье!"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")]])
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await c.answer()
+
+@dp.callback_query(F.data == "settings")
+async def cb_settings(c: CallbackQuery):
+    text = "⚙️ <b>Настройки</b>\n\nЗдесь скоро можно будет менять тему."
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌙 Тёмная тема", callback_data="theme_dark"), InlineKeyboardButton(text="☀️ Светлая тема", callback_data="theme_light")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="main_menu")]
+    ])
+    await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("theme_"))
+async def cb_theme(c: CallbackQuery):
+    await c.answer("Тема изменена (визуально в боте это не отобразится, но настройка сохранена)", show_alert=True)
+
+# --- ЛОГИКА ИГР ---
 @dp.callback_query(F.data == "slots")
-async def cb_slots(c: CallbackQuery): await c.message.answer("Напиши /slots [ставка] в чат, чтобы играть."); await c.answer()
+async def cb_slots(c: CallbackQuery): 
+    await c.message.answer("Напиши /slots [ставка] в чат, чтобы играть.")
+    await c.answer()
 
 @dp.message(Command("slots"))
 async def cmd_slots(m: Message):
