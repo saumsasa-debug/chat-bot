@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 BOT_TOKEN = "9092732678:AAFmhciWXZCY_fETo2kgitaR8rLWF2tmuak"
-WEB_APP_URL = "https://chat-bot-iszv.onrender.com/v12"
+WEB_APP_URL = "https://chat-bot-iszv.onrender.com/v13"
 
 dp = Dispatcher()
 
@@ -268,7 +268,7 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     app = web.Application()
     app.router.add_get('/', handle_ping)
-    app.router.add_get('/v12', app_page)
+    app.router.add_get('/v13', app_page)
     runner = web.AppRunner(app); await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 10000); await site.start()
     print("Bot Started!"); await dp.start_polling(bot)
