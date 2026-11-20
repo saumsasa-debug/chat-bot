@@ -1,4 +1,4 @@
-import asyncio, sqlite3, random, datetime, urllib.parse
+import asyncio, sqlite3, urllib.parse
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -7,13 +7,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 BOT_TOKEN = "9116065800:AAHENWeP6vSK-xL7Q4hJkZmycA5XGIqZ0No"
-CARD = "2202 2092 3280 2644"
 ADMIN_PASS = "3421"
 ADMIN_USER = "@spoff_id"
 
 db = sqlite3.connect('ai.db', check_same_thread=False)
 c = db.cursor()
-c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, reqs INTEGER DEFAULT 3)')
+# Ставим 5 запросов по умолчанию
+c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, reqs INTEGER DEFAULT 5)')
 c.execute('CREATE TABLE IF NOT EXISTS promos (code TEXT PRIMARY KEY, reqs INTEGER, uses INTEGER DEFAULT 0)')
 db.commit()
 
@@ -23,6 +23,8 @@ class Adm(StatesGroup):
     wait_pass = State()
     promo_name = State()
     promo_reqs = State()
+    give_user = State()
+    give_amount = State()
 
 class UserPromo(StatesGroup):
     wait_code = State()
@@ -45,6 +47,8 @@ def adm_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 Выдать запросы", callback_data="adm_give")],
         [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")],
+        [InlineKeyboardButton(text="🔨 Забанить юзера", callback_data="adm_ban")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="adm_msg")],
         [InlineKeyboardButton(text="⬅ Выход", callback_data="back_main")]
     ])
 
@@ -82,6 +86,7 @@ async def process_promo(m: Message, state: FSMContext):
     await state.clear()
     await cmd_start(m, state)
 
+# --- АДМИНКА ---
 @dp.message(Command("admin"))
 async def cmd_admin(m: Message, state: FSMContext):
     await m.answer("Введи пароль:")
@@ -95,9 +100,45 @@ async def check_pass(m: Message, state: FSMContext):
         await m.answer("❌ Неверный пароль.")
     await state.clear()
 
+@dp.callback_query(F.data == "adm_give")
+async def cb_adm_give(c: CallbackQuery, state: FSMContext):
+    await c.message.edit_text("Введи @username пользователя (без @):")
+    await state.set_state(Adm.give_user)
+    await c.answer()
+
+@dp.message(Adm.give_user)
+async def adm_give_user(m: Message, state: FSMContext):
+    uname = m.text.strip().replace("@", "")
+    await state.update_data(uname=uname)
+    await m.answer("Сколько запросов выдать?")
+    await state.set_state(Adm.give_amount)
+
+@dp.message(Adm.give_amount)
+async def adm_give_amount(m: Message, state: FSMContext):
+    if not m.text.isdigit(): return await m.answer("Число:")
+    amt = int(m.text)
+    data = await state.get_data()
+    uname = data['uname']
+    c.execute("SELECT id FROM users WHERE username=?", (uname,))
+    res = c.fetchone()
+    if res:
+        add_reqs(res[0], amt)
+        await m.answer(f"✅ Выдано {amt} запросов пользователю @{uname}.")
+    else:
+        await m.answer("❌ Пользователь не найден в базе (пусть нажмет /start).")
+    await state.clear()
+
+@dp.callback_query(F.data == "adm_ban")
+async def cb_adm_ban(c: CallbackQuery):
+    await c.answer("Функция бана (нужен ID или @username)", show_alert=True)
+
+@dp.callback_query(F.data == "adm_msg")
+async def cb_adm_msg(c: CallbackQuery):
+    await c.answer("Функция рассылки в разработке", show_alert=True)
+
 @dp.callback_query(F.data == "adm_promo")
 async def cb_adm_promo(c: CallbackQuery, state: FSMContext):
-    await c.message.edit_text("Введи название промокода (латиницей, без пробелов):")
+    await c.message.edit_text("Введи название промокода (латиницей):")
     await state.set_state(Adm.promo_name)
     await c.answer()
 
@@ -105,25 +146,20 @@ async def cb_adm_promo(c: CallbackQuery, state: FSMContext):
 async def adm_promo_name(m: Message, state: FSMContext):
     code = m.text.strip().upper()
     await state.update_data(code=code)
-    await m.answer("Сколько запросов должен выдавать этот промокод?")
+    await m.answer("Сколько запросов должен выдавать промокод?")
     await state.set_state(Adm.promo_reqs)
 
 @dp.message(Adm.promo_reqs)
 async def adm_promo_reqs(m: Message, state: FSMContext):
-    if not m.text.isdigit():
-        return await m.answer("Введи число:")
+    if not m.text.isdigit(): return await m.answer("Введи число:")
     reqs = int(m.text)
     data = await state.get_data()
-    code = data['code']
-    c.execute("INSERT OR REPLACE INTO promos (code, reqs) VALUES (?, ?)", (code, reqs))
+    c.execute("INSERT OR REPLACE INTO promos (code, reqs) VALUES (?, ?)", (data['code'], reqs))
     db.commit()
-    await m.answer(f"✅ Промокод <code>{code}</code> создан на {reqs} запросов!", parse_mode="HTML")
+    await m.answer(f"✅ Промокод <code>{data['code']}</code> создан на {reqs} запросов!", parse_mode="HTML")
     await state.clear()
 
-@dp.callback_query(F.data == "adm_give")
-async def cb_adm_give(c: CallbackQuery):
-    await c.answer("Функция в разработке (нужен ввод @username)", show_alert=True)
-
+# --- ГЕНЕРАЦИЯ ---
 @dp.callback_query(F.data == "draw")
 async def cb_draw(c: CallbackQuery):
     await c.message.answer("Отправь мне текст, и я нарисую картинку:")
@@ -140,7 +176,8 @@ async def handle_prompt(m: Message, state: FSMContext):
     add_reqs(m.from_user.id, -1)
     try:
         encoded = urllib.parse.quote(m.text)
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true"
+        # Изменили модель на flux для лучшего качества
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux"
         await m.answer_photo(photo=url, caption=f"Твой запрос: {m.text}")
     except Exception as e:
         await m.answer(f"❌ Ошибка: {e}")
