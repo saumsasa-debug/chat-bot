@@ -1,13 +1,12 @@
-import asyncio, sqlite3, random, datetime
+import asyncio, sqlite3, random, datetime, urllib.parse
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import urllib.parse
 
-BOT_TOKEN = "9160721343:AAG0guycCUJ5uyvXr7waRtjcqZVnZmpn7nA"
+BOT_TOKEN = "9116065800:AAHENWeP6vSK-xL7Q4hJkZmycA5XGIqZ0No"
 CARD = "2202 2092 3280 2644"
 ADMIN_PASS = "3421"
 ADMIN_USER = "@spoff_id"
@@ -83,7 +82,6 @@ async def process_promo(m: Message, state: FSMContext):
     await state.clear()
     await cmd_start(m, state)
 
-# --- АДМИНКА ---
 @dp.message(Command("admin"))
 async def cmd_admin(m: Message, state: FSMContext):
     await m.answer("Введи пароль:")
@@ -126,14 +124,12 @@ async def adm_promo_reqs(m: Message, state: FSMContext):
 async def cb_adm_give(c: CallbackQuery):
     await c.answer("Функция в разработке (нужен ввод @username)", show_alert=True)
 
-# --- ГЕНЕРАЦИЯ ---
 @dp.callback_query(F.data == "draw")
 async def cb_draw(c: CallbackQuery):
     await c.message.answer("Отправь мне текст, и я нарисую картинку:")
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def handle_prompt(m: Message, state: FSMContext):
-    # Игнорируем, если это ввод промокода
     if await state.get_state() == UserPromo.wait_code:
         return
     reqs = get_reqs(m.from_user.id)
