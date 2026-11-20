@@ -13,7 +13,8 @@ ADMIN_USER = "@spoff_id"
 db = sqlite3.connect('ai.db', check_same_thread=False)
 c = db.cursor()
 c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, reqs INTEGER DEFAULT 5)')
-c.execute('CREATE TABLE IF NOT EXISTS promos (code TEXT PRIMARY KEY, reqs INTEGER, uses INTEGER DEFAULT 0)')
+# Добавили max_uses и uses
+c.execute('CREATE TABLE IF NOT EXISTS promos (code TEXT PRIMARY KEY, reqs INTEGER, max_uses INTEGER, uses INTEGER DEFAULT 0)')
 db.commit()
 
 dp = Dispatcher()
@@ -22,6 +23,7 @@ class Adm(StatesGroup):
     wait_pass = State()
     promo_name = State()
     promo_reqs = State()
+    promo_limit = State()
     give_user = State()
     give_amount = State()
 
@@ -45,9 +47,7 @@ def main_kb():
 def adm_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 Выдать запросы", callback_data="adm_give")],
-        [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")], # <--- ВОТ ОНА
-        [InlineKeyboardButton(text="🔨 Забанить юзера", callback_data="adm_ban")],
-        [InlineKeyboardButton(text="📢 Рассылка", callback_data="adm_msg")],
+        [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")],
         [InlineKeyboardButton(text="⬅ Выход", callback_data="back_main")]
     ])
 
@@ -55,6 +55,9 @@ def adm_kb():
 async def cmd_start(m: Message, state: FSMContext):
     await state.clear()
     reqs = get_reqs(m.from_user.id)
+    # Обновляем username в базе на всякий случай
+    c.execute("UPDATE users SET username=? WHERE id=?", (m.from_user.username, m.from_user.id))
+    db.commit()
     await m.answer(f"👋 Привет! У тебя {reqs} запросов на генерацию.\nВыбери действие:", reply_markup=main_kb())
 
 @dp.callback_query(F.data == "back_main")
@@ -64,6 +67,7 @@ async def cb_back(c: CallbackQuery, state: FSMContext):
     await c.message.edit_text(f"👋 Главное меню. У тебя {reqs} запросов.\nВыбери действие:", reply_markup=main_kb())
     await c.answer()
 
+# --- ПРОМОКОДЫ ---
 @dp.callback_query(F.data == "enter_promo")
 async def cb_enter_promo(c: CallbackQuery, state: FSMContext):
     await c.message.edit_text("Введи промокод (например: BONUS):")
@@ -73,15 +77,18 @@ async def cb_enter_promo(c: CallbackQuery, state: FSMContext):
 @dp.message(UserPromo.wait_code)
 async def process_promo(m: Message, state: FSMContext):
     code = m.text.strip().upper()
-    c.execute("SELECT reqs, uses FROM promos WHERE code=?", (code,))
+    c.execute("SELECT reqs, max_uses, uses FROM promos WHERE code=?", (code,))
     res = c.fetchone()
     if res:
-        reqs, uses = res
-        add_reqs(m.from_user.id, reqs)
-        c.execute("UPDATE promos SET uses = uses + 1 WHERE code=?", (code,)); db.commit()
-        await m.answer(f"✅ Промокод активирован! Ты получил {reqs} запросов.")
+        reqs, max_uses, uses = res
+        if uses >= max_uses:
+            await m.answer("❌ Этот промокод больше не действителен (лимит активаций исчерпан).")
+        else:
+            add_reqs(m.from_user.id, reqs)
+            c.execute("UPDATE promos SET uses = uses + 1 WHERE code=?", (code,)); db.commit()
+            await m.answer(f"✅ Промокод активирован! Ты получил {reqs} запросов.")
     else:
-        await m.answer("❌ Неверный или просроченный промокод.")
+        await m.answer("❌ Неверный промокод.")
     await state.clear()
     await cmd_start(m, state)
 
@@ -99,42 +106,42 @@ async def check_pass(m: Message, state: FSMContext):
         await m.answer("❌ Неверный пароль.")
     await state.clear()
 
+# Выдача запросов
 @dp.callback_query(F.data == "adm_give")
 async def cb_adm_give(c: CallbackQuery, state: FSMContext):
-    await c.message.edit_text("Введи @username пользователя (без @):")
+    await c.message.edit_text("Введи @username или ID пользователя:")
     await state.set_state(Adm.give_user)
     await c.answer()
 
 @dp.message(Adm.give_user)
 async def adm_give_user(m: Message, state: FSMContext):
-    uname = m.text.strip().replace("@", "")
-    await state.update_data(uname=uname)
+    val = m.text.strip().replace("@", "")
+    await state.update_data(user_val=val)
     await m.answer("Сколько запросов выдать?")
     await state.set_state(Adm.give_amount)
 
 @dp.message(Adm.give_amount)
 async def adm_give_amount(m: Message, state: FSMContext):
-    if not m.text.isdigit(): return await m.answer("Число:")
+    if not m.text.isdigit(): return await m.answer("Введи число:")
     amt = int(m.text)
     data = await state.get_data()
-    uname = data['uname']
-    c.execute("SELECT id FROM users WHERE username=?", (uname,))
+    val = data['user_val']
+    
+    # Ищем по username ИЛИ по ID
+    if val.isdigit():
+        c.execute("SELECT id FROM users WHERE id=?", (int(val),))
+    else:
+        c.execute("SELECT id FROM users WHERE username=?", (val,))
+        
     res = c.fetchone()
     if res:
         add_reqs(res[0], amt)
-        await m.answer(f"✅ Выдано {amt} запросов пользователю @{uname}.")
+        await m.answer(f"✅ Выдано {amt} запросов.")
     else:
-        await m.answer("❌ Пользователь не найден в базе (пусть нажмет /start).")
+        await m.answer("❌ Не найден. Попроси его нажать /start.")
     await state.clear()
 
-@dp.callback_query(F.data == "adm_ban")
-async def cb_adm_ban(c: CallbackQuery):
-    await c.answer("Функция бана (нужен ID или @username)", show_alert=True)
-
-@dp.callback_query(F.data == "adm_msg")
-async def cb_adm_msg(c: CallbackQuery):
-    await c.answer("Функция рассылки в разработке", show_alert=True)
-
+# Создание промокода
 @dp.callback_query(F.data == "adm_promo")
 async def cb_adm_promo(c: CallbackQuery, state: FSMContext):
     await c.message.edit_text("Введи название промокода (латиницей):")
@@ -143,19 +150,25 @@ async def cb_adm_promo(c: CallbackQuery, state: FSMContext):
 
 @dp.message(Adm.promo_name)
 async def adm_promo_name(m: Message, state: FSMContext):
-    code = m.text.strip().upper()
-    await state.update_data(code=code)
-    await m.answer("Сколько запросов должен выдавать промокод?")
+    await state.update_data(code=m.text.strip().upper())
+    await m.answer("Сколько запросов будет выдавать промокод?")
     await state.set_state(Adm.promo_reqs)
 
 @dp.message(Adm.promo_reqs)
 async def adm_promo_reqs(m: Message, state: FSMContext):
     if not m.text.isdigit(): return await m.answer("Введи число:")
-    reqs = int(m.text)
+    await state.update_data(reqs=int(m.text))
+    await m.answer("Сколько раз можно активировать этот промокод?")
+    await state.set_state(Adm.promo_limit)
+
+@dp.message(Adm.promo_limit)
+async def adm_promo_limit(m: Message, state: FSMContext):
+    if not m.text.isdigit(): return await m.answer("Введи число:")
     data = await state.get_data()
-    c.execute("INSERT OR REPLACE INTO promos (code, reqs) VALUES (?, ?)", (data['code'], reqs))
+    c.execute("INSERT OR REPLACE INTO promos (code, reqs, max_uses) VALUES (?, ?, ?)", 
+              (data['code'], data['reqs'], int(m.text)))
     db.commit()
-    await m.answer(f"✅ Промокод <code>{data['code']}</code> создан на {reqs} запросов!", parse_mode="HTML")
+    await m.answer(f"✅ Промокод {data['code']} создан на {data['reqs']} запросов (активаций: {m.text}).")
     await state.clear()
 
 # --- ГЕНЕРАЦИЯ ---
@@ -173,12 +186,18 @@ async def handle_prompt(m: Message, state: FSMContext):
     
     await m.answer("🎨 Рисую, подожди 10-15 секунд...")
     add_reqs(m.from_user.id, -1)
-    try:
-        encoded = urllib.parse.quote(m.text)
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux"
-        await m.answer_photo(photo=url, caption=f"Твой запрос: {m.text}")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {e}")
+    
+    # Защита от сбоев сервера картинок
+    for _ in range(3):
+        try:
+            encoded = urllib.parse.quote(m.text)
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
+            await m.answer_photo(photo=url, caption=f"Твой запрос: {m.text}")
+            return # Если успешно, выходим из цикла
+        except Exception:
+            await asyncio.sleep(1) # Ждем секунду и пробуем снова
+            
+    await m.answer("❌ Ошибка генерации. Сервер перегружен, попробуй еще раз.")
 
 async def handle_ping(request): return web.Response(text="OK")
 
