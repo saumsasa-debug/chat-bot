@@ -12,7 +12,6 @@ ADMIN_USER = "@spoff_id"
 
 db = sqlite3.connect('ai.db', check_same_thread=False)
 c = db.cursor()
-# Ставим 5 запросов по умолчанию
 c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, reqs INTEGER DEFAULT 5)')
 c.execute('CREATE TABLE IF NOT EXISTS promos (code TEXT PRIMARY KEY, reqs INTEGER, uses INTEGER DEFAULT 0)')
 db.commit()
@@ -46,7 +45,7 @@ def main_kb():
 def adm_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 Выдать запросы", callback_data="adm_give")],
-        [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")],
+        [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")], # <--- ВОТ ОНА
         [InlineKeyboardButton(text="🔨 Забанить юзера", callback_data="adm_ban")],
         [InlineKeyboardButton(text="📢 Рассылка", callback_data="adm_msg")],
         [InlineKeyboardButton(text="⬅ Выход", callback_data="back_main")]
@@ -176,7 +175,6 @@ async def handle_prompt(m: Message, state: FSMContext):
     add_reqs(m.from_user.id, -1)
     try:
         encoded = urllib.parse.quote(m.text)
-        # Изменили модель на flux для лучшего качества
         url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux"
         await m.answer_photo(photo=url, caption=f"Твой запрос: {m.text}")
     except Exception as e:
