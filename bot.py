@@ -1,99 +1,160 @@
-import asyncio, sqlite3, datetime
+import asyncio, sqlite3, random, datetime
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+import urllib.parse
 
 BOT_TOKEN = "9160721343:AAG0guycCUJ5uyvXr7waRtjcqZVnZmpn7nA"
-WEB_APP_URL = "https://chat-bot-iszv.onrender.com/anon"
+CARD = "2202 2092 3280 2644"
 ADMIN_PASS = "3421"
+ADMIN_USER = "@spoff_id"
 
-db = sqlite3.connect('anon.db', check_same_thread=False)
+db = sqlite3.connect('ai.db', check_same_thread=False)
 c = db.cursor()
-c.execute('CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, uid INTEGER, uname TEXT, msg TEXT, time TEXT)')
+c.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, reqs INTEGER DEFAULT 3)')
+c.execute('CREATE TABLE IF NOT EXISTS promos (code TEXT PRIMARY KEY, reqs INTEGER, uses INTEGER DEFAULT 0)')
 db.commit()
 
 dp = Dispatcher()
-waiting_users = [] # Очередь ожидания
-active_chats = {}  # Связки: user_id -> partner_id
 
-class AdminState(StatesGroup):
+class Adm(StatesGroup):
     wait_pass = State()
+    promo_name = State()
+    promo_reqs = State()
 
-HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><script src="https://telegram.org/js/telegram-web-app.js"></script>
-<style>body{background:#121212;color:#fff;font-family:sans-serif;text-align:center;padding:15px}.card{background:#1e1e1e;border-radius:10px;padding:15px;margin-bottom:15px}.btn{background:#4CAF50;color:#fff;border:none;padding:10px;border-radius:5px;width:100%;margin:5px 0;font-size:16px}</style></head><body>
-<div class="card"><h2>Анонимный чат</h2><button class="btn" onclick="alert('Поиск...')">🔍 Начать диалог</button></div>
-</body></html>"""
+class UserPromo(StatesGroup):
+    wait_code = State()
 
-async def app_page(request): return web.Response(text=HTML, content_type='text/html')
-async def handle_ping(request): return web.Response(text="OK")
+def get_reqs(uid):
+    c.execute("INSERT OR IGNORE INTO users (id) VALUES (?)", (uid,)); db.commit()
+    c.execute("SELECT reqs FROM users WHERE id=?", (uid,)); return c.fetchone()[0]
+
+def add_reqs(uid, amt):
+    c.execute("UPDATE users SET reqs = reqs + ? WHERE id=?", (amt, uid)); db.commit()
+
+def main_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎨 Нарисовать", callback_data="draw")],
+        [InlineKeyboardButton(text="➕ Купить запросы", callback_data="buy"), InlineKeyboardButton(text="🎟 Промокод", callback_data="enter_promo")],
+        [InlineKeyboardButton(text="💸 Заработать", callback_data="ref"), InlineKeyboardButton(text="🆘 Поддержка", url=f"https://t.me/{ADMIN_USER[1:]}")]
+    ])
+
+def adm_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Выдать запросы", callback_data="adm_give")],
+        [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")],
+        [InlineKeyboardButton(text="⬅ Выход", callback_data="back_main")]
+    ])
 
 @dp.message(Command("start"))
-async def cmd_start(m: Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Открыть чат", web_app=WebAppInfo(url=f"{WEB_APP_URL}"))]])
-    await m.answer("Добро пожаловать! Жми кнопку:", reply_markup=kb)
+async def cmd_start(m: Message, state: FSMContext):
+    await state.clear()
+    reqs = get_reqs(m.from_user.id)
+    await m.answer(f"👋 Привет! У тебя {reqs} запросов на генерацию.\nВыбери действие:", reply_markup=main_kb())
 
+@dp.callback_query(F.data == "back_main")
+async def cb_back(c: CallbackQuery, state: FSMContext):
+    await state.clear()
+    reqs = get_reqs(c.from_user.id)
+    await c.message.edit_text(f"👋 Главное меню. У тебя {reqs} запросов.\nВыбери действие:", reply_markup=main_kb())
+    await c.answer()
+
+@dp.callback_query(F.data == "enter_promo")
+async def cb_enter_promo(c: CallbackQuery, state: FSMContext):
+    await c.message.edit_text("Введи промокод (например: BONUS):")
+    await state.set_state(UserPromo.wait_code)
+    await c.answer()
+
+@dp.message(UserPromo.wait_code)
+async def process_promo(m: Message, state: FSMContext):
+    code = m.text.strip().upper()
+    c.execute("SELECT reqs, uses FROM promos WHERE code=?", (code,))
+    res = c.fetchone()
+    if res:
+        reqs, uses = res
+        add_reqs(m.from_user.id, reqs)
+        c.execute("UPDATE promos SET uses = uses + 1 WHERE code=?", (code,)); db.commit()
+        await m.answer(f"✅ Промокод активирован! Ты получил {reqs} запросов.")
+    else:
+        await m.answer("❌ Неверный или просроченный промокод.")
+    await state.clear()
+    await cmd_start(m, state)
+
+# --- АДМИНКА ---
 @dp.message(Command("admin"))
 async def cmd_admin(m: Message, state: FSMContext):
-    await m.answer("Пароль:")
-    await state.set_state(AdminState.wait_pass)
+    await m.answer("Введи пароль:")
+    await state.set_state(Adm.wait_pass)
 
-@dp.message(AdminState.wait_pass)
+@dp.message(Adm.wait_pass)
 async def check_pass(m: Message, state: FSMContext):
     if m.text == ADMIN_PASS:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📜 Последние 20 сообщений", callback_data="admin_logs")]])
-        await m.answer("Админ-панель:", reply_markup=kb)
+        await m.answer("✅ Админ-панель:", reply_markup=adm_kb())
     else:
-        await m.answer("Неверный пароль")
+        await m.answer("❌ Неверный пароль.")
     await state.clear()
 
-@dp.callback_query(F.data == "admin_logs")
-async def show_logs(c):
-    c_db = db.cursor()
-    c_db.execute("SELECT uname, msg, time FROM logs ORDER BY id DESC LIMIT 20")
-    rows = c_db.fetchall()
-    text = "📜 <b>Последние сообщения:</b>\n\n"
-    for r in rows:
-        text += f"👤 {r[0]} | 🕒 {r[2]}\n💬 {r[1]}\n\n"
-    await c.message.answer(text or "Пусто", parse_mode="HTML")
+@dp.callback_query(F.data == "adm_promo")
+async def cb_adm_promo(c: CallbackQuery, state: FSMContext):
+    await c.message.edit_text("Введи название промокода (латиницей, без пробелов):")
+    await state.set_state(Adm.promo_name)
+    await c.answer()
+
+@dp.message(Adm.promo_name)
+async def adm_promo_name(m: Message, state: FSMContext):
+    code = m.text.strip().upper()
+    await state.update_data(code=code)
+    await m.answer("Сколько запросов должен выдавать этот промокод?")
+    await state.set_state(Adm.promo_reqs)
+
+@dp.message(Adm.promo_reqs)
+async def adm_promo_reqs(m: Message, state: FSMContext):
+    if not m.text.isdigit():
+        return await m.answer("Введи число:")
+    reqs = int(m.text)
+    data = await state.get_data()
+    code = data['code']
+    c.execute("INSERT OR REPLACE INTO promos (code, reqs) VALUES (?, ?)", (code, reqs))
+    db.commit()
+    await m.answer(f"✅ Промокод <code>{code}</code> создан на {reqs} запросов!", parse_mode="HTML")
+    await state.clear()
+
+@dp.callback_query(F.data == "adm_give")
+async def cb_adm_give(c: CallbackQuery):
+    await c.answer("Функция в разработке (нужен ввод @username)", show_alert=True)
+
+# --- ГЕНЕРАЦИЯ ---
+@dp.callback_query(F.data == "draw")
+async def cb_draw(c: CallbackQuery):
+    await c.message.answer("Отправь мне текст, и я нарисую картинку:")
 
 @dp.message(F.text & ~F.text.startswith("/"))
-async def handle_chat(m: Message):
-    if m.chat.type != "private": return
+async def handle_prompt(m: Message, state: FSMContext):
+    # Игнорируем, если это ввод промокода
+    if await state.get_state() == UserPromo.wait_code:
+        return
+    reqs = get_reqs(m.from_user.id)
+    if reqs <= 0:
+        return await m.answer("❌ У тебя закончились запросы! Купи их в меню или активируй промокод.")
     
-    # Логируем
-    c.execute("INSERT INTO logs (uid, uname, msg, time) VALUES (?, ?, ?, ?)", 
-              (m.from_user.id, m.from_user.username or m.from_user.first_name, m.text, datetime.datetime.now().strftime("%H:%M:%S")))
-    db.commit()
+    await m.answer("🎨 Рисую, подожди 10-15 секунд...")
+    add_reqs(m.from_user.id, -1)
+    try:
+        encoded = urllib.parse.quote(m.text)
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true"
+        await m.answer_photo(photo=url, caption=f"Твой запрос: {m.text}")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {e}")
 
-    # Логика связывания (упрощенная)
-    if m.from_user.id in active_chats:
-        partner = active_chats[m.from_user.id]
-        try:
-            await m.bot.send_message(partner, f"Аноним: {m.text}")
-        except:
-            pass
-    else:
-        if m.from_user.id not in waiting_users:
-            waiting_users.append(m.from_user.id)
-            await m.answer("🔍 Ищем собеседника...")
-        else:
-            # Нашли пару
-            if len(waiting_users) >= 2:
-                user1 = waiting_users.pop(0)
-                user2 = m.from_user.id
-                active_chats[user1] = user2
-                active_chats[user2] = user1
-                await m.bot.send_message(user1, "✅ Собеседник найден! Пиши.")
-                await m.answer("✅ Собеседник найден! Пиши.")
+async def handle_ping(request): return web.Response(text="OK")
 
 async def main():
     bot = Bot(token=BOT_TOKEN)
     app = web.Application()
     app.router.add_get('/', handle_ping)
-    app.router.add_get('/anon', app_page)
     runner = web.AppRunner(app); await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 10000); await site.start()
     print("Bot Started!")
